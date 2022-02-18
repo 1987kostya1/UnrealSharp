@@ -95,7 +95,20 @@ namespace UnrealSharp
             {
                 // GNamesPattern = (UInt64)Memory.FindPattern("48 8D 0D ? ? ? ? E8 ? ? ? ? C6 05 ? ? ? ? 01 0F 10 03 4C 8D 44 24 20 48 8B C8");
                 //GNamesPattern = (UInt64)Memory.FindPattern("74 09 48 8D 15 ? ? ? ? EB 16");
-                GNamesPattern = (UInt64)Memory.FindPattern("48 8D 35 ? ? ? ? EB 16");
+                string[] GNamesPatternList =
+                {
+                    "48 8D 35 ? ? ? ? EB 16",//4.23 - 1
+                    "48 8B 05 ? ? ? ? 48 85 C0 75 5F",//4.23 - 2
+                    "48 8D 0D ? ? ? ? E8 ? ? ? ? C6 05 ? ? ? ? 01 0F 10 03 4C 8D 44 24 20 48 8B C8",//4.25 - 1
+
+
+                };
+                for (int i = 0; i < GNamesPatternList.Length; i++)
+                {
+                    var pattern = GNamesPatternList[i];
+                    GNamesPattern = (UInt64)Memory.FindPattern(pattern);
+                    if (GNamesPattern != 0) break;
+                }
                 if (GNamesPattern == 0)
                 {
                     UEObject.NewFName = false;
@@ -255,15 +268,30 @@ namespace UnrealSharp
                 {
                     var childClassPtr = Memory.ReadProcessMemory<UInt64>(fieldPtr + c);
                     if (childClassPtr == 0x0) continue;
-                    //var classNameOffset = UEObject.NewFName ? 0 : UEObject.fieldNameOffset;
-                    var classNameOffset = UEObject.fieldNameOffset;
-                    //classNameOffset =UEObject.nameOffset;
-                    var classNameIndex = Memory.ReadProcessMemory<Int32>(childClassPtr + classNameOffset);
-                    var name = UEObject.GetName(classNameIndex);
-                    if (name == "Level" || name == "ObjectProperty")
+                    uint classNameOffset = UEObject.NewFName ? 0U : UEObject.fieldNameOffset;
+                    if (UEObject.GetName(UnrealEngine.Memory.ReadProcessMemory<int>(childClassPtr + (ulong)classNameOffset)) == "ObjectProperty")
                     {
                         UEObject.fieldClassOffset = c;
                         foundNextField = true;
+                    }
+                }
+                
+                if (!foundNextField)
+                {
+                    for (var c = 0u; c < 0x180 && !foundNextField; c += 0x8)
+                    {
+                        var childClassPtr = Memory.ReadProcessMemory<UInt64>(fieldPtr + c);
+                        if (childClassPtr == 0x0) continue;
+                        //var classNameOffset = UEObject.NewFName ? 0 : UEObject.fieldNameOffset;
+                        var classNameOffset = UEObject.fieldNameOffset;
+                        //classNameOffset =UEObject.nameOffset;
+                        var classNameIndex = Memory.ReadProcessMemory<Int32>(childClassPtr + classNameOffset);
+                        var name = UEObject.GetName(classNameIndex);
+                        if (name == "Level" || name == "ObjectProperty")
+                        {
+                            UEObject.fieldClassOffset = c;
+                            foundNextField = true;
+                        }
                     }
                 }
                 if (!foundNextField) throw new Exception("bad field class offset");
@@ -1027,10 +1055,12 @@ namespace UnrealSharp
             var fieldType = UnrealEngine.Memory.ReadProcessMemory<UInt64>(fieldAddr + fieldClassOffset);
             var fieldNameIndex = UnrealEngine.Memory.ReadProcessMemory<Int32>(baseType);
             var fieldTypeName = GetName(fieldNameIndex);
-            FieldAddrToType[fieldAddr] = name;
-            return fieldTypeName;
             var name = GetName(UnrealEngine.Memory.ReadProcessMemory<Int32>(fieldType + fieldNameOffset));
+            FieldAddrToType[fieldAddr] = name;
             return name;
+            //return fieldTypeName;
+            
+            
         }
         UInt64 GetFieldAddr(UInt64 origClassAddr, UInt64 classAddr, String fieldName)
         {
